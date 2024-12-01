@@ -16,17 +16,51 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 
+import org.json.JSONArray;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.List;
+
 
 public class CustomAdapter extends ArrayAdapter<Recipe> {
     private ArrayList<Recipe> recipes;
+    private ArrayList<UserInfo> users;
+    private String currentUser;
 
 
-    public CustomAdapter(@NonNull Context context, @NonNull ArrayList<Recipe> objects) {
+    public CustomAdapter(@NonNull Context context, @NonNull ArrayList<Recipe> objects,
+                         @NonNull ArrayList<UserInfo> users, String currentUser) {
         super(context, 0, objects);
         this.recipes = objects;
+        this.users = users;
+        this.currentUser = currentUser;
     }
+
+    // The recipe has been deleted
+    public void deleteRecipe(Recipe recipe) {
+        recipes.remove(recipe);
+        notifyDataSetChanged();
+        saveAccounts(users);
+    }
+
+    // Save all accounts
+    public void saveAccounts(ArrayList<UserInfo> users){
+        try{
+            JSONArray jsonArray = new JSONArray();
+            for (UserInfo user : users) {
+                jsonArray.put(user.toJSON());
+            }
+
+            FileOutputStream fileOutputStream = getContext().openFileOutput(Constants.USERS_PATH, Context.MODE_PRIVATE);
+            fileOutputStream.write(jsonArray.toString().getBytes(StandardCharsets.UTF_8));
+            fileOutputStream.close();
+        } catch (IOException e) {
+            throw new RuntimeException("Error saving accounts", e);
+        }
+    }
+
 
     @NonNull
     @Override
@@ -40,28 +74,126 @@ public class CustomAdapter extends ArrayAdapter<Recipe> {
         TextView nameTextView = convertView.findViewById(R.id.nameEditText);
         nameTextView.setText(recipe.getName());
 
-        CheckBox favoriteCheckBox = convertView.findViewById(R.id.favoriteCheckBox);
-
         Button delete = convertView.findViewById(R.id.delete);
 
+        Button edit_name = convertView.findViewById(R.id.edit_name);
+
+        CheckBox favoriteCheckBox = convertView.findViewById(R.id.favoriteCheckBox);
+        favoriteCheckBox.setOnCheckedChangeListener(null); // Disable the listener
+        favoriteCheckBox.setChecked(recipe.isFavorite()); // Set the state without triggering the listener
+
+        // Only one favorite allowed
         favoriteCheckBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                boolean flag = false;
-                for (int index = 0; index < recipes.size(); index++) {
-                    if (recipes.get(index).isFavorite() && recipes.get(index) != recipe) {
-                        flag = true;
+            public void onCheckedChanged(CompoundButton compoundButton, boolean isChecked) {
+                if (isChecked) {
+                    // Check if there is already a favorite recipe
+                    boolean hasAnotherFavorite = false;
+                    for (Recipe r : recipes) {
+                        if (r.isFavorite() && !r.equals(recipe)) {
+                            hasAnotherFavorite = true;
+                            break;
+                        }
+                    }
+
+                    if (hasAnotherFavorite) {
+                        //Toast.makeText(getContext(), "You can't have more than one favorite recipe", Toast.LENGTH_SHORT).show();
+                        favoriteCheckBox.setChecked(false);
+                    } else {
+                        // Mark this recipe as favorite
+                        recipe.setFavorite(true);
+
+                        // Unmark other favorites using an index-based loop
+                        for (int i = 0; i < recipes.size(); i++) {
+                            Recipe r = recipes.get(i);
+                            if (r.isFavorite() && !r.equals(recipe)) {
+                                r.setFavorite(false);
+                            }
+                        }
+
+                        Toast.makeText(getContext(), "Favorite recipe: " + recipe.getName(), Toast.LENGTH_SHORT).show();
+                    }
+                } else {
+                    // Unmark this recipe as favorite
+                    recipe.setFavorite(false);
+                }
+
+                // Update the user's recipes
+                for (UserInfo user : users) {
+                    if (user.getUserName().equals(currentUser)) {
+                        user.setRecipes(recipes);
                         break;
                     }
                 }
-                if (flag) {
-                    Toast.makeText(getContext(), "You can't have more than one favorite recipe", Toast.LENGTH_SHORT).show();
-                    favoriteCheckBox.setChecked(false);
-                }
-                else
-                    recipe.setFavorite(isChecked);
+
+                // Save updated accounts
+                saveAccounts(users);
             }
         });
+
+        // Rename the recipe
+        edit_name.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
+                builder.setTitle("Rename");
+                builder.setMessage("Are you sure you would like to rename this recipe ?");
+                builder.setCancelable(true);
+
+                builder.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        AlertDialog.Builder builder1 = new AlertDialog.Builder(getContext());
+                        builder1.setTitle("Rename");
+                        builder1.setMessage("Enter new name...");
+                        builder1.setCancelable(false);
+
+                        final EditText input = new EditText(getContext());
+                        input.setHint("Enter new name...");
+                        builder1.setView(input);
+
+                        builder1.setNeutralButton("Cancel", new DialogInterface.OnClickListener() {
+                           @Override
+                           public void onClick(DialogInterface dialogInterface, int i) {
+                               Toast.makeText(getContext(), "Recipe name not changed", Toast.LENGTH_SHORT).show();
+                           }
+                        });
+
+                        builder1.setPositiveButton("Confirm", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialogInterface, int i) {
+                                recipes.get(position).setName(input.getText().toString());
+
+                                // Update the current user info
+                                for (UserInfo user : users) {
+                                    if (user.getUserName().equals(currentUser)) {
+                                        user.setRecipes(recipes);
+                                    }
+                                }
+
+                                Toast.makeText(getContext(), "Recipe name changed", Toast.LENGTH_SHORT).show();
+
+                                // Update users info
+                                saveAccounts(users);
+                                notifyDataSetChanged();
+
+                            }
+                        });
+                        builder1.show();
+                    }
+                });
+
+                builder.setNegativeButton("No", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialogInterface, int i) {
+                        //Toast.makeText(getContext(), "Recipe name not changed", Toast.LENGTH_SHORT).show();
+                    }
+                });
+                AlertDialog alertDialog = builder.create();
+                alertDialog.show();
+            }
+        });
+
 
         delete.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -73,8 +205,7 @@ public class CustomAdapter extends ArrayAdapter<Recipe> {
                 builder.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        recipes.remove(recipe);
-                        notifyDataSetChanged();
+                        deleteRecipe(recipe);
                         dialog.dismiss();
                     }
                 });
@@ -82,7 +213,7 @@ public class CustomAdapter extends ArrayAdapter<Recipe> {
                 builder.setNegativeButton("No", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        Toast.makeText(getContext(), "Recipe not deleted", Toast.LENGTH_SHORT).show();
+                        //Toast.makeText(getContext(), "Recipe not deleted", Toast.LENGTH_SHORT).show();
                         dialog.dismiss();
                     }
                 });
@@ -91,6 +222,7 @@ public class CustomAdapter extends ArrayAdapter<Recipe> {
             }
         });
 
+        notifyDataSetChanged();
         return convertView;
     }
 }

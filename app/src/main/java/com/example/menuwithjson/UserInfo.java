@@ -21,15 +21,16 @@ public class UserInfo {
     }
 
     public void addRecipe(Recipe recipe){
-        this.recipes.add(recipe);
+        if (this.recipes != null)
+            this.recipes.add(recipe);
     }
 
     public ArrayList<Recipe> getRecipes(){
-        return recipes;
+        return this.recipes;
     }
 
     public String getPassword() {
-        return password;
+        return this.password;
     }
 
     public void setPassword(String password) {
@@ -37,11 +38,15 @@ public class UserInfo {
     }
 
     public String getUserName() {
-        return userName;
+        return this.userName;
     }
 
     public void setUserName(String userName) {
         this.userName = userName;
+    }
+
+    public void setRecipes(ArrayList<Recipe> recipes) {
+        this.recipes = recipes;
     }
 
 
@@ -53,9 +58,9 @@ public class UserInfo {
 
             JSONArray recipesArray = new JSONArray();
             for (Recipe recipe : this.recipes) {
-                recipesArray.put(recipe.toJSON()); // Assuming Recipe has a toJSON method
+                recipesArray.put(recipe.toJSON());
             }
-            json.put("recipes", recipesArray);
+            json.put(Constants.RECIPE_TAG, recipesArray);
 
             return json;
         } catch (JSONException e) {
@@ -63,4 +68,23 @@ public class UserInfo {
         }
     }
 
+    @Override
+    public String toString() {
+        if (recipes != null) {
+            String s = "";
+            for (Recipe recipe : recipes) {
+                s += recipe.toString() + " ";
+            }
+            return "UserInfo{" +
+                    "userName='" + this.userName + '\'' +
+                    ", password='" + this.password + '\'' +
+                    ", recipes=" + s +
+                    '}';
+        }
+        return "UserInfo{" +
+                "userName='" + this.userName + '\'' +
+                ", password='" + this.password + '\'' +
+                ", recipes= null" +
+                '}';
+    }
 }
